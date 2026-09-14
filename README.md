@@ -1,3 +1,14 @@
+---
+title: Heart CTR & Lung Segmentation
+emoji: 🫁
+colorFrom: blue
+colorTo: indigo
+sdk: streamlit
+sdk_version: 1.30.0
+app_file: app.py
+pinned: false
+---
+
 # Lung Segmentation and Automatic Cardiothoracic Ratio (CTR) Calculation
 
 > **Research Paper Reference**: *"Automatic cardiothoracic ratio calculation based on lung fields abstracted from chest X-ray images without heart segmentation"*
@@ -58,12 +69,6 @@ Following the paper methodology:
 ├── requirements.txt                  # TF/Keras dependency list
 ├── README.md                         # Documentation
 ├── lung_segmentation_ctr.ipynb       # 31-Section Jupyter Notebook
-│
-├── chexmask datset and model/        # Dataset root directory
-│   └── Lung Segmentation/
-│       ├── CXR_png/                  # 800 Chest X-ray images
-│       ├── masks/                    # 704 Ground-truth lung masks
-│       └── test/                     # 96 Unlabelled test images
 │
 ├── models/                           # Best Keras models
 │   ├── segnet_best.keras
