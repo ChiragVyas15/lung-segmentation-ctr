@@ -1,0 +1,25 @@
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints/
+
+# Environments
+venv/
+env/
+ENV/
+.venv
+
+# Datasets & Heavy Raw Images
+Lung Segmentation/
+data/
+
+# Large Model Checkpoint Files (>100MB GitHub limit)
+models/*.keras
+*.pth
+*.pt
+*.h5
+
+# Temporary & Local Outputs
+outputs/temp/
+.DS_Store

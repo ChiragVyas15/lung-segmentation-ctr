@@ -1,0 +1,2 @@
+total_xrays,total_masks,matched_pairs,unmatched_xrays,unlabelled_test_images
+800,704,704,96,96
