@@ -44,13 +44,6 @@ st.markdown("""
         text-align: center;
         margin-bottom: 20px;
     }
-    .metric-card {
-        background-color: #F8FAFC;
-        border-radius: 8px;
-        padding: 12px;
-        border: 1px solid #E2E8F0;
-        text-align: center;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -85,18 +78,18 @@ min_area = st.sidebar.slider("Min Component Area (px)", 50, 2000, int(config.MIN
 
 # Sidebar Navigation Tabs
 app_mode = st.sidebar.radio("Navigate", [
-    "🚀 Single Image Inference & CTR",
+    "🚀 Image Inference & CTR Analysis",
     "🖼️ Dataset Test Gallery",
     "📊 Overall Model Performance Benchmark"
 ])
 
 # Utility Helper Functions
-def process_single_image(img_path_or_bytes, models, gt_mask_path=None):
+def process_single_image(img_input, models, gt_mask_path=None):
     """Runs all 4 models on a single image and computes segmentation + CTR outputs."""
-    if isinstance(img_path_or_bytes, (str, Path)):
-        img = load_and_preprocess_image(str(img_path_or_bytes))
+    if isinstance(img_input, (str, Path)):
+        img = load_and_preprocess_image(str(img_input))
     else:
-        file_bytes = np.asarray(bytearray(img_path_or_bytes.read()), dtype=np.uint8)
+        file_bytes = np.asarray(bytearray(img_input.read()), dtype=np.uint8)
         decoded = cv2.imdecode(file_bytes, cv2.IMREAD_GRAYSCALE)
         resized = cv2.resize(decoded, (config.IMAGE_SIZE[1], config.IMAGE_SIZE[0]))
         img = (resized.astype(np.float32) / 255.0)[:, :, np.newaxis]
@@ -147,33 +140,48 @@ def process_single_image(img_path_or_bytes, models, gt_mask_path=None):
 
     return img, gt_mask, results
 
-# TAB 1: SINGLE IMAGE INFERENCE & CTR
-if app_mode == "🚀 Single Image Inference & CTR":
-    st.header("1. Upload Chest X-Ray")
-    uploaded_file = st.file_uploader("Choose a Chest X-Ray image (PNG / JPG)", type=["png", "jpg", "jpeg"])
+# TAB 1: IMAGE INFERENCE & CTR ANALYSIS
+if app_mode == "🚀 Image Inference & CTR Analysis":
+    st.header("Select or Upload a Chest X-Ray Image")
 
-    if uploaded_file is not None:
-        st.subheader("Original Image Details")
-        col_img, col_info = st.columns([1, 2])
+    # Discover built-in sample images in sample_images folder
+    sample_dir = BASE_DIR / "sample_images"
+    sample_files = sorted(list(sample_dir.glob("*_0.png"))) if sample_dir.exists() else []
+
+    input_source = st.radio("Choose Input Method:", ["🖼️ Select from Pre-loaded Samples", "📤 Upload Custom X-Ray Image"], horizontal=True)
+
+    selected_img_path = None
+    selected_mask_path = None
+    uploaded_file = None
+
+    if input_source == "🖼️ Select from Pre-loaded Samples" and sample_files:
+        sample_choice = st.selectbox("Choose a Sample Chest X-Ray:", [f.name for f in sample_files])
+        selected_img_path = sample_dir / sample_choice
+        mask_name = sample_choice.replace(".png", "_mask.png")
+        if (sample_dir / mask_name).exists():
+            selected_mask_path = sample_dir / mask_name
+    elif input_source == "📤 Upload Custom X-Ray Image":
+        uploaded_file = st.file_uploader("Choose a Chest X-Ray image file (PNG / JPG)", type=["png", "jpg", "jpeg"])
+
+    active_input = selected_img_path or uploaded_file
+
+    if active_input is not None:
+        st.subheader("Original Image & Ground Truth")
+        col_img, col_gt = st.columns(2)
         
-        temp_dir = config.OUTPUTS_DIR / "temp"
-        temp_dir.mkdir(exist_ok=True)
-        temp_path = temp_dir / uploaded_file.name
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
-
-        img, gt_mask, results = process_single_image(temp_path, models_dict)
+        img, gt_mask, results = process_single_image(active_input, models_dict, gt_mask_path=selected_mask_path)
 
         with col_img:
-            st.image((img.squeeze() * 255).astype(np.uint8), caption=uploaded_file.name, use_container_width=True)
+            st.image((img.squeeze() * 255).astype(np.uint8), caption="Input Chest X-Ray", use_container_width=True)
         
-        with col_info:
-            st.write(f"**Filename**: `{uploaded_file.name}`")
-            st.write(f"**Preprocessing Dimensions**: `{config.IMAGE_SIZE[0]} x {config.IMAGE_SIZE[1]} x 1`")
-            st.write(f"**Model Inference Status**: All 4 models evaluated automatically.")
+        with col_gt:
+            if gt_mask is not None:
+                st.image(gt_mask.squeeze(), caption="Ground Truth Lung Mask", use_container_width=True)
+            else:
+                st.info("Ground truth mask unavailable for custom uploaded image.")
 
         st.markdown("---")
-        st.header("2. Multi-Model Lung Segmentation & CTR Analysis")
+        st.header("Multi-Model Lung Segmentation & CTR Geometric Diagrams")
 
         cols = st.columns(4)
         for idx, (key, res) in enumerate(results.items()):
@@ -181,29 +189,40 @@ if app_mode == "🚀 Single Image Inference & CTR":
                 st.subheader(res['name'])
                 st.image(res['mask'].squeeze(), caption=f"{res['name']} Mask", use_container_width=True)
                 
+                # Annotated CTR Diagram
                 fig_ctr = plot_ctr_visualization(img, res['mask'], res['points'], res['ctr'], 
                                                 res['cardiac_dia'], res['thoracic_dia'], model_name=res['name'])
                 st.pyplot(fig_ctr)
 
                 if not np.isnan(res['ctr']):
-                    st.metric("CTR Value", f"{res['ctr']:.4f}")
-                    st.caption(f"Cardiac Dia: {res['cardiac_dia']:.1f} px | Thoracic Dia: {res['thoracic_dia']:.1f} px")
+                    st.metric(f"{res['name']} CTR", f"{res['ctr']:.4f}")
+                    st.caption(f"Cardiac: {res['cardiac_dia']:.1f} px | Thoracic: {res['thoracic_dia']:.1f} px")
                 else:
-                    st.error("Invalid Lung Geometry")
+                    st.error("Invalid Geometry")
 
         st.markdown("---")
-        st.header("3. Multi-Model CTR Comparison Table")
+        st.header("Multi-Model CTR & Segmentation Metrics Comparison")
         
         table_data = []
         for key, res in results.items():
-            table_data.append({
+            m = res['metrics']
+            row_info = {
                 'Model': res['name'],
                 'CTR': f"{res['ctr']:.4f}" if not np.isnan(res['ctr']) else "NaN",
-                'Cardiac Diameter (px)': f"{res['cardiac_dia']:.1f}" if not np.isnan(res['cardiac_dia']) else "NaN",
-                'Thoracic Diameter (px)': f"{res['thoracic_dia']:.1f}" if not np.isnan(res['thoracic_dia']) else "NaN"
-            })
+                'Cardiac Dia (px)': f"{res['cardiac_dia']:.1f}" if not np.isnan(res['cardiac_dia']) else "NaN",
+                'Thoracic Dia (px)': f"{res['thoracic_dia']:.1f}" if not np.isnan(res['thoracic_dia']) else "NaN"
+            }
+            if m:
+                row_info.update({
+                    'Dice Score': f"{m['dice']:.4f}",
+                    'IoU': f"{m['iou']:.4f}",
+                    'Accuracy': f"{m['accuracy']:.4f}",
+                    'HD95 (px)': f"{m['hd95']:.2f}"
+                })
+            table_data.append(row_info)
+            
         st.table(pd.DataFrame(table_data))
-        st.info("ℹ️ **CTR Ground Truth Note**: CTR ground truth is not available in this dataset. Displayed CTR values are model-derived geometric estimates.")
+        st.info("ℹ️ **CTR Note**: CTR values are calculated geometrically without heart segmentation following the research paper methodology.")
 
 # TAB 2: DATASET TEST GALLERY
 elif app_mode == "🖼️ Dataset Test Gallery":
@@ -245,7 +264,7 @@ elif app_mode == "🖼️ Dataset Test Gallery":
         else:
             st.warning("Ground-truth segmentation mask unavailable for this image.")
     else:
-        st.error("Dataset split file not found. Please run training/evaluation first.")
+        st.error("Dataset split file not found. Run training/evaluation first.")
 
 # TAB 3: OVERALL PERFORMANCE BENCHMARK
 elif app_mode == "📊 Overall Model Performance Benchmark":
